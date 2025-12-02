@@ -394,6 +394,164 @@ public class PdfType3FunctionTest extends ExtendedITextTest {
         Assertions.assertArrayEquals(new double[] {-2}, output, EPSILON);
     }
 
+    @Test
+    public void calculateWithOutputClippingTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        // Add Range to enable output clipping [0, 0.5]
+        type3FuncDict.put(PdfName.Range, new PdfArray(new double[] {0, 0.5}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {1});
+        // Input value 1 produces 1 from the function, but should be clipped to 0.5
+        Assertions.assertArrayEquals(new double[] {0.5}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateWithNegativeEncodingTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        // Use negative encoding values
+        type3FuncDict.put(PdfName.Encode, new PdfArray(new double[] {-1, 0, -1, 0}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.25});
+        // Input 0.25 in subdomain [0, 0.5] with encode [-1, 0] maps to -0.5
+        // The function domain is [0, 1], so -0.5 is clipped to 0
+        // Function with N=2: 0 + (1-0) * 0^2 = 0
+        Assertions.assertArrayEquals(new double[] {0.0}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateMidpointInSubdomainTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.25});
+        // Input 0.25 is exactly in the middle of subdomain [0, 0.5]
+        // Mapped to 0.5 via encode [0, 1], and function calculates: 0.5^2 = 0.25
+        Assertions.assertArrayEquals(new double[] {0.25}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateUpperBoundaryClippingTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {10});
+        // Input value 10 is beyond domain [0, 1], so it's clipped to 1
+        // Then passed to second function with encode [0, 1], resulting in 1^1 = 1
+        Assertions.assertArrayEquals(new double[] {1}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateFirstSubdomainMidpointTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(0).put(PdfName.C0, new PdfArray(new double[] {2}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(0).put(PdfName.C1, new PdfArray(new double[] {8}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.25});
+        // Input 0.25 in subdomain [0, 0.5] with encode [0, 1] maps to 0.5
+        // Function with C0=2, C1=8, N=2: 2 + (8-2) * 0.5^2 = 2 + 6 * 0.25 = 3.5
+        Assertions.assertArrayEquals(new double[] {3.5}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateSecondSubdomainMidpointTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(1).put(PdfName.C0, new PdfArray(new double[] {10}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(1).put(PdfName.C1, new PdfArray(new double[] {20}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.75});
+        // Input 0.75 in subdomain [0.5, 1] with encode [0, 1] maps to 0.5
+        // Function with C0=10, C1=20, N=1: 10 + (20-10) * 0.5 = 15
+        Assertions.assertArrayEquals(new double[] {15}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateWithNonUniformEncodingTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        // Use non-uniform encoding that maps entire domain to partial function range
+        type3FuncDict.put(PdfName.Encode, new PdfArray(new double[] {0.2, 0.8, 0.3, 0.7}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.5});
+        // Input 0.5 is at bound, maps to subdomain [0.5, 1] with encode [0.3, 0.7]
+        // At x=0.5 (start of subdomain), encoded value is 0.3
+        // Function with N=1: 0 + (1-0) * 0.3 = 0.3
+        Assertions.assertArrayEquals(new double[] {0.3}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateEmptyArrayInputTest() {
+        PdfType3Function type3Func = new PdfType3Function(createMinimalPdfType3FunctionDict());
+
+        Exception ex = Assertions.assertThrows(PdfException.class, () -> type3Func.calculate(new double[] {}));
+        Assertions.assertEquals(KernelExceptionMessageConstant.INVALID_INPUT_FOR_TYPE_3_FUNCTION, ex.getMessage());
+    }
+
+    @Test
+    public void calculateZeroInputValueTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0});
+        // Input 0 is at the left domain boundary, should use first function
+        // With encode [0, 1], maps to 0, and function calculates: 0^2 = 0
+        Assertions.assertArrayEquals(new double[] {0}, output, EPSILON);
+    }
+
+    @Test
+    public void calculateWithMultipleOutputComponentsTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        // Modify functions to have 2 output components
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(0).put(PdfName.Range, 
+            new PdfArray(new double[] {0, 1, 0, 1}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(0).put(PdfName.C0, 
+            new PdfArray(new double[] {0, 0.5}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(0).put(PdfName.C1, 
+            new PdfArray(new double[] {1, 1.5}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(1).put(PdfName.Range, 
+            new PdfArray(new double[] {0, 1, 0, 1}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(1).put(PdfName.C0, 
+            new PdfArray(new double[] {0, 0.5}));
+        type3FuncDict.getAsArray(PdfName.Functions).getAsDictionary(1).put(PdfName.C1, 
+            new PdfArray(new double[] {1, 1.5}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.5});
+        // Should return array with 2 components
+        Assertions.assertEquals(2, output.length);
+    }
+
+    @Test
+    public void calculateNearBoundaryValueTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        // Test value very close to but less than boundary
+        double[] output = type3Function.calculate(new double[] {0.4999999});
+        // Should use first function (subdomain [0, 0.5])
+        // Input 0.4999999 maps to 0.9999998 via encode [0, 1]
+        // Function with N=2: 0.9999998^2 ≈ 0.9999996
+        Assertions.assertEquals(1, output.length);
+        Assertions.assertTrue(output[0] > 0.99); // Very close to 1
+    }
+
+    @Test
+    public void calculateWithScaledEncodingTest() {
+        PdfDictionary type3FuncDict = createMinimalPdfType3FunctionDict();
+        // Use encoding that scales the input range
+        type3FuncDict.put(PdfName.Encode, new PdfArray(new double[] {0, 2, 0, 2}));
+        PdfType3Function type3Function = new PdfType3Function(type3FuncDict);
+
+        double[] output = type3Function.calculate(new double[] {0.5});
+        // Input 0.5 at bound maps to subdomain [0.5, 1] with encode [0, 2]
+        // At start of subdomain, encoded value is 0
+        // But function domain is [0, 1], so 0 is clipped; Function: 0^1 = 0
+        Assertions.assertArrayEquals(new double[] {0}, output, EPSILON);
+    }
+
     private static PdfDictionary createMinimalPdfType3FunctionDict() {
         PdfDictionary type3Func = new PdfDictionary();
         type3Func.put(PdfName.FunctionType, new PdfNumber(3));
