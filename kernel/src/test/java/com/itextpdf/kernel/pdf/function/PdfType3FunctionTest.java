@@ -547,8 +547,8 @@ public class PdfType3FunctionTest extends ExtendedITextTest {
 
         double[] output = type3Function.calculate(new double[] {0.5});
         // Input 0.5 at bound maps to subdomain [0.5, 1] with encode [0, 2]
-        // At start of subdomain, encoded value is 0
-        // But function domain is [0, 1], so 0 is clipped; Function: 0^1 = 0
+        // At start of subdomain, encoded value is 0, which is within function domain [0, 1]
+        // Function: 0^1 = 0
         Assertions.assertArrayEquals(new double[] {0}, output, EPSILON);
     }
 
